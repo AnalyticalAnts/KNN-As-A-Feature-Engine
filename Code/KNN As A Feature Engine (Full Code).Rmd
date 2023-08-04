@@ -1,0 +1,266 @@
+---
+title: "KNN as a Feature Engine over Imbalanced Datasets with Ensemble ML"
+---
+
+## PART 1: KNN as a Feature Engine
+```{r}
+##########################
+## Establish Environment
+##########################
+## Packages
+  library('pacman')
+  pacman::p_load(dplyr,rpart,FNN,performanceEstimation,unbalanced, caret, mgcv) 
+## User Defined Parameters
+  ## KNN Objectives
+    Model_Evaluation <- 'DEPLOY' ## VALIDATE | TEST | DEPLOY
+    KNN_TrainSet_Change <- 'ENN' ## NONE | SCALE | SMOTE | TOMEK | ENN 
+  ## KNN Parameters
+    KNN_K = 19 ##Run once (K=1),then run 'TEST-K' script below for optimization
+    SMOTE_PrcOver = 3
+    SMOTE_PrcUnder = 1.34
+    ENN_K = 3
+  ## Dataset Parameters
+    df_Size <- 10000 ## Magnitude of 10 (e.g., 10, 100, 1000, etc.)
+    df_Imbal <- 0.1 ## Works best <= 0.5
+    df_Bias <- 'BIAS' ## NONE | BIAS << None = Random, Bias = Bias data
+  ## Splits
+    Pc_Train = .80
+    Pc_valid = .5 ##Allocates this percentage of remaining data to valid
+## Data
+  set.seed(2023)
+  Index <- 1 + (0:(df_Size - 1)) * 1
+  df<-data.frame(IndexID=as.factor(Index),y=rep(as.factor(c('0','1'))
+      ,times=c(ceiling(as.integer(df_Size*(1-df_Imbal)))
+               ,ceiling(as.integer(df_Size*df_Imbal)))))
+  df$x1=if(df_Bias=='BIAS'){ifelse(df$y=='1',rnorm(sum(df$y=='1'),sd=0.5)
+                                   ,rnorm(sum(df$y=='0')))}else{rnorm(df_Size)}
+  df$x2=if(df_Bias=='BIAS'){ifelse(df$y=='1',rnorm(sum(df$y=='1'),sd=0.5)
+                                   ,rnorm(sum(df$y=='0')))}else{rnorm(df_Size)}
+## Functions
+  knn_predict <-function(train_Data, test_Data, train_Class, K_param){
+    knn(train=train_Data,test=test_Data,cl=train_Class,prob=TRUE,k=K_param)}
+  knn_evaluate <- function(Type, Knn_Model, TestClass){
+    cm <- table ( TestClass, Knn_Model )
+    print ( cm )
+    if(all(c(0,1) %in% Knn_Model)) {
+        Accuracy <- round( (cm[1,1]+cm[2,2]) / sum(cm[]), digits = 4) * 100
+        Precision <- round( cm[2,2] / sum(cm[,2]), digits = 4)* 100
+        Specificity <- round( cm[1,1] / sum(cm[1,]), digits = 4)* 100
+        Recall <- round( cm[2,2] / sum(cm[2,]), digits = 4)* 100
+        F1Score<- round(2*((Precision*Recall)/(Precision+Recall)),digits=2)
+      print( paste('Model=',Type,': Accuracy=',Accuracy,'% | Precision='
+                ,Precision,'% | Specificity=',Specificity,'% | Recall=',Recall
+                ,'% | F1Score=',F1Score,'%'))
+      }else{print(paste('Model=',Model_Evaluation
+              ,': Only one class predicted. Metrics cannot be calculated.'))}}
+##########################
+## KNN PREP: Split, Scale, SMOTE, TOMEK, ENN
+##########################
+## Shuffle & SPLIT
+  df <- sample_frac(df,1)
+  tIndex<-createDataPartition(df$y,p=Pc_Train,list=FALSE,times=1)
+  vIndex<-createDataPartition(df$y[-tIndex],p=Pc_valid,list=FALSE,times=1)
+    train <- df[tIndex,]
+    valid <- df[-tIndex,][vIndex,]
+    test <- df[-tIndex,][-vIndex,]
+## SCALE
+  train_scale <- scale ( train[,3:4] )
+  test_scale <- scale ( test[,3:4] )
+  valid_scale <- scale ( valid[,3:4] )
+## SMOTE
+  train_scale_smote <-
+    performanceEstimation::smote(y~x1+x2,data=mutate(as.data.frame(train_scale)
+                ,y=train[,2]),perc.over=SMOTE_PrcOver,perc.under=SMOTE_PrcUnder)
+## TOMEK
+  Tomek <- ubTomek( train_scale_smote[,-3], train_scale_smote[,3] )
+    train_scale_smote_TOMEK <- cbind(Tomek$Y, Tomek$X)
+    colnames( train_scale_smote_TOMEK) <- c("y", "x1" , "x2")
+## ENN
+  ENN <- ubENN( train_scale_smote[,-3], train_scale_smote[,3] , k = ENN_K )
+    train_scale_smote_ENN <- cbind(ENN$Y, ENN$X)
+    colnames( train_scale_smote_ENN) <- c("y", "x1" , "x2")
+##########################
+## KNN
+##########################
+## KNN Evaluation Parameters
+  KNN_Train <- 
+    if (KNN_TrainSet_Change %in% 'NONE') { train[,3:4]
+      } else if(KNN_TrainSet_Change %in% 'SCALE') {train_scale
+      } else if(KNN_TrainSet_Change %in% 'SMOTE') {train_scale_smote[,-3]
+      } else if(KNN_TrainSet_Change %in% 'TOMEK') {train_scale_smote_TOMEK[,-1]
+      } else if(KNN_TrainSet_Change %in% 'ENN') {train_scale_smote_ENN[,-1]
+      }
+  KNN_TrainClass <- 
+    if (KNN_TrainSet_Change %in% c('NONE','SCALE')) {train[,2]
+      } else if (KNN_TrainSet_Change %in% 'SMOTE') {train_scale_smote[,3]
+      } else if (KNN_TrainSet_Change %in% 'TOMEK') {train_scale_smote_TOMEK[,1]
+      } else if (KNN_TrainSet_Change %in% 'ENN') {train_scale_smote_ENN[,1]
+      }
+  KNN_Test_Tr<-if(KNN_TrainSet_Change == 'NONE'){train[,3:4]}else{train_scale}
+  KNN_Test_V<-if(KNN_TrainSet_Change == 'NONE'){test[,3:4]}else{valid_scale}
+  KNN_Test_Tt<-if(KNN_TrainSet_Change == 'NONE'){valid[,3:4]}else{test_scale}
+  KNN_TestClass_Tr <- train[,2] 
+  KNN_TestClass_V <- valid[,2] 
+  KNN_TestClass_Tt <-test[,2]
+## KNN MODELS
+  KNN_Model_Train <- knn_predict(KNN_Train, KNN_Test_Tr, KNN_TrainClass, KNN_K)
+  KNN_Model_Valid <- knn_predict(KNN_Train, KNN_Test_V, KNN_TrainClass, KNN_K)
+  KNN_Model_Test <- knn_predict(KNN_Train, KNN_Test_Tt, KNN_TrainClass, KNN_K)
+## KNN as Feature Engine (PSEUDO-LABELING|SELF-TRAINING)
+if(Model_Evaluation=='VALIDATE'){
+  knn_evaluate('Validate', KNN_Model_Valid, KNN_TestClass_V )} else
+  if(Model_Evaluation=='TEST')
+    {knn_evaluate('Test',KNN_Model_Test,KNN_TestClass_Tt)} else
+  if(Model_Evaluation=='DEPLOY') {
+  ## Feature Engineering
+    ## Training set for Ensemble Learning (Part 2)
+      KNN_Model_Final <- knn_predict(KNN_Train, KNN_Train,KNN_TrainClass, KNN_K)
+      KNN_Train_Final <- mutate(as.data.frame(KNN_Train),y=KNN_TrainClass)
+        KNN_Train_Final$Class <- KNN_Model_Final
+        KNN_Train_Final$ClassScore <- attr( KNN_Model_Final, "prob" )
+        ##View Train Evaluation: 
+          # knn_evaluate('FINAL', KNN_Train_Final[,4], KNN_Train_Final[,3] )
+    ## Test & Validation sets for Ensemble (Part 2)
+      KNN_Test_Tr <- mutate(as.data.frame(KNN_Test_Tr),y=KNN_TestClass_Tr)
+        KNN_Test_Tr$Class <- KNN_Model_Train
+        KNN_Test_Tr$ClassScore <- attr(KNN_Model_Train, "prob")
+      KNN_Test_V <- mutate(as.data.frame(KNN_Test_V),y=KNN_TestClass_V)
+        KNN_Test_V$Class <- KNN_Model_Valid
+        KNN_Test_V$ClassScore <- attr(KNN_Model_Valid, "prob")
+      KNN_Test_Tt <- mutate(as.data.frame(KNN_Test_Tt),y=KNN_TestClass_Tt)
+        KNN_Test_Tt$Class <- KNN_Model_Test
+        KNN_Test_Tt$ClassScore <- attr(KNN_Model_Test, "prob" )
+    ## Review Results So Far
+    df_results <- rbind ( KNN_Test_V, KNN_Test_Tr , KNN_Test_Tt )
+      knn_evaluate('DEPLOY',df_results[,4],df_results[,3])
+    ##Clear Memory
+    rm(df_results) 
+}
+```
+
+## PART 1: TESTING K ( Model_Evaluation == 'VALIDATE'/'TEST')
+```{r}
+k_values <- c(3, 5, 7, 15, 19)  # List of K values to iterate over
+
+for (k in k_values) {
+  KNN_Model_Valid <- knn_predict(KNN_Train, KNN_Test_V, KNN_TrainClass, k)
+  knn_evaluate(paste('K=', k, sep=''), KNN_Model_Valid, KNN_TestClass_V)
+}
+```
+
+## PART 2: Ensemble Learning
+```{r}
+##########################
+## Establish Environment
+##########################
+## User Defined Parameters
+  Model_Evaluation <- 'VALIDATE' ## VALIDATE | TEST | DEPLOY
+  FeatureEngine_Avail <- 'N' ## Y | N
+  Tree_y_Weight = .5 ## 0 through 1
+  Tree_cp = .01
+  Tree_minsplit = 10
+## Other Parameters
+  set.seed(2023)
+  ## Functions
+  Model_Predict<-function(model,eval_data,model_name){
+    predictions <- if(model_name=='Tree'){predict(model,newdata=eval_data)}else
+      predict(model, newdata = eval_data, type = "response")
+    ifelse(predictions >= .5, 1, 0)
+  }
+  Model_Evalaute<-function(model,eval_data_class,model_name){
+    cm <- if (model_name == 'Tree') {
+        table ( eval_data_class, model[,2] )
+        } else table ( eval_data_class, as.vector(model) )
+    print ( cm )
+    if(all(c(0,1) %in% model)) {
+        Accuracy <- round( (cm[1,1]+cm[2,2]) / sum(cm[]), digits = 4) * 100
+        Precision <- round( cm[2,2] / sum(cm[,2]), digits = 4)* 100
+        Specificity <- round( cm[1,1] / sum(cm[1,]), digits = 4)* 100
+        Recall <- round( cm[2,2] / sum(cm[2,]), digits = 4)* 100
+        F1Score<- round(2*((Precision*Recall)/(Precision+Recall)),digits=2)
+      print( paste('Model=',model_name,': Accuracy=',Accuracy,'% | Precision='
+                ,Precision,'% | Specificity=',Specificity,'% | Recall=',Recall
+                ,'% | F1Score=',F1Score,'%'))
+      }else{print(paste('Model=',model_name
+              ,': Only one class predicted. Metrics cannot be calculated.'))}
+  }
+  ## Other
+  if(FeatureEngine_Avail=="Y"){
+        Columns<-c('y','x1','x2','Class')#,'ClassScore')
+        selected_cols<-c('x1','x2','Class')#,'ClassScore')
+        Formula=y~x1+x2+Class#+ClassScore
+      } else if (FeatureEngine_Avail=="N"){
+        Columns<-c('y','x1','x2')
+        selected_cols<-c('x1','x2')
+        Formula=y~x1+x2
+  }
+##########################
+## ENSEMBLE PREP
+##########################
+  Enmbl_Training <- KNN_Train_Final[Columns]
+  Enmbl_Vld <- KNN_Test_V[Columns] ## Ensemble Valid
+  Enmbl_Tst <- KNN_Test_Tt[Columns] ## Ensemble Test
+  Enmbl_Trn <- KNN_Test_Tr[Columns] ## Ensemble Train
+  weights = ifelse(Enmbl_Training$y == 1, Tree_y_Weight, (1-Tree_y_Weight))
+
+##########################
+## ENSEMBLE MODELS
+##########################
+## Models || GAM note: variable optimization: y ~ s(x)...
+GAM<-gam(as.formula(Formula),data=Enmbl_Training,family=binomial())
+GLM<-glm(y~.,data=Enmbl_Training,family=binomial(link="logit"))
+Tree<-rpart(y~.,data=Enmbl_Training,method="class", weights = weights
+            ,control = rpart.control(cp=Tree_cp, minsplit = Tree_minsplit)
+            )
+## Predictions
+GAM_Pred_Tr<-Model_Predict(GAM,as.data.frame(Enmbl_Trn[selected_cols]),'GAM')
+GAM_Pred_V<-Model_Predict(GAM,as.data.frame(Enmbl_Vld[selected_cols]),'GAM')
+GAM_Pred_Tt<-Model_Predict(GAM,as.data.frame(Enmbl_Tst[selected_cols]),'GAM')
+GLM_Pred_Tr<-Model_Predict(GLM,as.data.frame(Enmbl_Trn[selected_cols]),'GLM')
+GLM_Pred_V<-Model_Predict(GLM,as.data.frame(Enmbl_Vld[selected_cols]),'GLM')
+GLM_Pred_Tt<-Model_Predict(GLM,as.data.frame(Enmbl_Tst[selected_cols]),'GLM')
+Tree_Pred_Tr<-Model_Predict(Tree,as.data.frame(Enmbl_Trn[selected_cols]),'Tree')
+Tree_Pred_V<-Model_Predict(Tree,as.data.frame(Enmbl_Vld[selected_cols]),'Tree')
+Tree_Pred_Tt<-Model_Predict(Tree,as.data.frame(Enmbl_Tst[selected_cols]),'Tree')
+## Evaluations
+if (Model_Evaluation == "VALIDATE") {
+    Model_Evalaute(GAM_Pred_V,Enmbl_Vld$y,'GAM' )
+    Model_Evalaute(GLM_Pred_V,Enmbl_Vld$y,'GLM' )
+    Model_Evalaute(Tree_Pred_V,Enmbl_Vld$y,'Tree' )
+  } else if (Model_Evaluation == "TEST") {
+    Model_Evalaute(GAM_Pred_Tt,Enmbl_Tst$y,'GAM' )
+    Model_Evalaute(GLM_Pred_Tt,Enmbl_Tst$y,'GLM' )
+    Model_Evalaute(Tree_Pred_Tt,Enmbl_Tst$y,'Tree' )
+  } else if(Model_Evaluation=='DEPLOY') {
+    ## Predict Over Train
+      Enmbl_Trn$GAMClass <- GAM_Pred_Tr
+      Enmbl_Trn$GLMClass <- GLM_Pred_Tr
+      Enmbl_Trn$TreeClass <- Tree_Pred_Tr[,2]
+    ## Predict Over Valid
+      Enmbl_Vld$GAMClass <- GAM_Pred_V
+      Enmbl_Vld$GLMClass <- GLM_Pred_V
+      Enmbl_Vld$TreeClass <- Tree_Pred_V[,2]
+    ## Predict Over Test
+      Enmbl_Tst$GAMClass <- GAM_Pred_Tt
+      Enmbl_Tst$GLMClass <- GLM_Pred_Tt
+      Enmbl_Tst$TreeClass <- Tree_Pred_Tt[,2]
+    ## Combine
+      Ensemble_Final<-rbind(Enmbl_Trn,Enmbl_Vld,Enmbl_Tst)
+    ## Evaluate >> Code differently based on variables available
+      if ( FeatureEngine_Avail == 'Y' ) {
+        Model_Evalaute (Ensemble_Final[,5],Ensemble_Final[,1],'GAM' )
+        Model_Evalaute (Ensemble_Final[,6],Ensemble_Final[,1],'GLM' )
+        Model_Evalaute (Ensemble_Final[,7],Ensemble_Final[,1],' Tree' )
+      } else {
+        Model_Evalaute (Ensemble_Final[,4],Ensemble_Final[,1],'GAM' )
+        Model_Evalaute (Ensemble_Final[,5],Ensemble_Final[,1],'GLM' )
+        Model_Evalaute (Ensemble_Final[,6],Ensemble_Final[,1],' Tree' )
+      }
+}
+```
+
+
+
+
+
+

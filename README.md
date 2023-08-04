@@ -10,3 +10,12 @@ A good example would be targeting a minority group of customers who are known to
 - Article Part 1/2: https://analyticalants.co/data-science/knn-as-a-feature-engine-with-imbalanced-data-part-1/
 - Article Part 2/2: https://analyticalants.co/data-science/knn-as-a-feature-engine-with-imbalanced-data-part-2-2/
 - Youtube Tutorial: https://youtu.be/C4wwYLum9tE
+
+## Analytical Ants LLC
+Analytical Ants provides systems (“Ants”) that systematically increase operational efficiencies and yields through dynamic data insights, data architecture, and processes.
+
+We deliver these insights through a holistic approach encompassing a large portion of the data-pipeline, mainly through machine learning, warehousing, and reporting.
+
+For more information, visit AnalyticalAnts.co
+
+Email: info@AnalyticalAnts.co

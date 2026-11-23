@@ -97,8 +97,9 @@ title: "KNN as a Feature Engine over Imbalanced Datasets with Ensemble ML"
       } else if (KNN_TrainSet_Change %in% 'ENN') {train_scale_smote_ENN[,1]
       }
   KNN_Test_Tr<-if(KNN_TrainSet_Change == 'NONE'){train[,3:4]}else{train_scale}
-  KNN_Test_V<-if(KNN_TrainSet_Change == 'NONE'){test[,3:4]}else{valid_scale}
-  KNN_Test_Tt<-if(KNN_TrainSet_Change == 'NONE'){valid[,3:4]}else{test_scale}
+  # Corrected 2026-11-23: the original code swapped the validation and test sets in the no-transformation branch.
+  KNN_Test_V<-if(KNN_TrainSet_Change == 'NONE'){valid[,3:4]}else{valid_scale}
+  KNN_Test_Tt<-if(KNN_TrainSet_Change == 'NONE'){test[,3:4]}else{test_scale}
   KNN_TestClass_Tr <- train[,2] 
   KNN_TestClass_V <- valid[,2] 
   KNN_TestClass_Tt <-test[,2]
